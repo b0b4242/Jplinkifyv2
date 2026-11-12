@@ -1,0 +1,52 @@
+name: Publier le site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dézipper le site
+        run: |
+          rm -rf _site && mkdir _site
+          ZIP=$(ls *.zip 2>/dev/null | sort | tail -n 1)
+          if [ -n "$ZIP" ]; then
+            echo "Zip trouvé : $ZIP"
+            unzip -q "$ZIP" -d _site -x '__MACOSX/*'
+          else
+            echo "Aucun zip : publication des fichiers du dépôt"
+            rsync -a --exclude '.git' --exclude '.github' --exclude '_site' ./ _site/
+          fi
+          INDEX=$(find _site -name index.html | awk '{print length, $0}' | sort -n | head -n 1 | cut -d' ' -f2-)
+          if [ -z "$INDEX" ]; then
+            echo "index.html introuvable dans le site"
+            exit 1
+          fi
+          echo "Site trouvé dans : $(dirname "$INDEX")"
+          echo "SITE_DIR=$(dirname "$INDEX")" >> "$GITHUB_ENV"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE_DIR }}
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
